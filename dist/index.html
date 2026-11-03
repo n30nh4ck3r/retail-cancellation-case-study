@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Retail cancellation case study</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f5f4ef;color:#192e29;font:16px system-ui}header{background:#153d32;color:#fff;padding:48px 24px}header>div,main{max-width:1020px;margin:auto}h1{font-size:clamp(34px,6vw,66px);line-height:1;margin:12px 0}p{line-height:1.6;max-width:75ch}main{padding:22px}section{background:white;border:1px solid #dce3da;border-radius:16px;padding:24px;margin-bottom:18px}small{letter-spacing:.12em;text-transform:uppercase;color:#abe2bd}a{color:#176049}select{font:inherit;padding:8px;margin-left:8px}table{border-collapse:collapse;width:100%;min-width:485px}td,th{padding:10px;text-align:left;border-bottom:1px solid #e0e6df}th{background:#e9f2ea}.scroll{overflow:auto}.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(135px,1fr));gap:12px;margin:18px 0}.cards div{background:#edf5ed;padding:14px;border-radius:8px}.cards strong{display:block;font-size:23px}h2{margin-top:0}.track{background:#edf5ed;height:7px;border-radius:6px;margin-top:6px}.bar{background:#2f765a;height:100%;border-radius:6px}.muted{color:#466358}
+</style>
+<header><div><small>Public data case study · UCI Online Retail</small><h1>One entry drove December’s cancellation spike</h1><p>I looked at invoices from a UK online retailer to see what was behind the jump in recorded cancellations.</p><p id="finding"></p></div></header>
+<main>
+<section><h2>Explore by month</h2><label>Invoice month <select id="month"></select></label><div class="cards" id="cards" aria-live="polite"></div><p class="muted">December 2011 is a partial month. Sales and cancellations are grouped by the month each invoice was recorded. A product’s cancellations can relate to purchases from a different month. Fees, postage and manual entries are shown on one separate line and left out of the product ranking.</p><div class="scroll"><table><thead><tr><th>Product</th><th>Gross sales</th><th>Cancellation value</th><th>Share of month</th></tr></thead><tbody id="products"></tbody></table></div></section>
+<section><h2>What changes when we set both entries aside?</h2><div class="cards" id="sensitivity"></div><p>Set both entries aside and December’s recorded cancellations drop below November’s. The data covers only part of December, so these totals tell us how much was recorded in each period. To compare how often cancellations happened, we’d need a separate check.</p></section>
+<section><h2>The two invoice entries</h2><div class="scroll"><table><thead><tr><th>Invoice</th><th>Stock code</th><th>Quantity</th><th>Unit price</th><th>Signed line value</th></tr></thead><tbody id="trace"></tbody></table></div><p class="muted">The amounts are equal and the quantities have opposite signs. The records leave open whether the entries are linked and why the cancellation happened.</p></section>
+<section><h2>How I checked the numbers</h2><p>Each input line falls into one category. Signed value is quantity multiplied by unit price. The dashboard reports cancellation value as a positive magnitude.</p><div class="scroll"><table><thead><tr><th>Rule</th><th>Source rows</th><th>Signed value</th></tr></thead><tbody id="audit"></tbody></table></div><p>SQL and pandas gave the same monthly totals from the prepared data. I also checked those totals directly against the original workbook. The Excel file shows the SQL and pandas figures side by side.</p><p><a href="Retail_Reconciliation.xlsx">Excel reconciliation</a> · <a href="../README.md">Source and reproduction steps</a> · <a href="https://archive.ics.uci.edu/dataset/352/online-retail">UCI dataset</a></p></section>
+<section><h2>What I’d do next</h2><p id="next-step"></p><p>If the team confirms a reversal, I’d show its impact separately in the monthly report. I’d then compare cancellation rates over equivalent periods before deciding whether there’s a wider problem.</p></section>
+<p class="muted">AI-assisted portfolio case study using public transaction data.</p></main>
+<script src="data.js"></script>
+<script>
+const el=id=>document.getElementById(id);
+const money=new Intl.NumberFormat('en-GB',{style:'currency',currency:'GBP'});
+const number=new Intl.NumberFormat('en-GB');
+const gbp=value=>money.format(value/10000);
+const pct=value=>(100*value).toFixed(1)+'%';
+function row(target, values){
+  const tr=target.insertRow();
+  for(const value of values) tr.insertCell().textContent=value;
+  return tr;
+}
+const peak=DATA.monthly.find(r=>r.month===DATA.peak);
+const S=DATA.sensitivity;
+el('finding').textContent='December had '+gbp(peak.cancelled)+' in recorded cancellations. One entry made up '+pct(S.line/peak.cancelled)+' of that total. There’s also a sale for the same item and amount, so the two entries may be an order and its reversal.';
+const november=DATA.monthly.find(r=>r.month==='2011-11');
+const sensitivity=[
+  ['December cancellations, recorded',S.cancelled],
+  ['December cancellations, without that line',S.cancelled_excl],
+  ['November cancellations, recorded',november.cancelled],
+  ['December gross sales, recorded',S.gross],
+  ['December gross sales, without the matching sale',S.gross_excl]
+];
+for(const [label,value] of sensitivity){
+  const card=document.createElement('div'), amount=document.createElement('strong');
+  amount.textContent=gbp(value);
+  card.append(label,amount);
+  el('sensitivity').append(card);
+}
+el('next-step').textContent='I’d ask the order team to check whether invoice '+S.invoice+' reversed invoice '+S.matched_invoice+'. That one entry accounts for most of December’s recorded cancellation value, so it’s the first place I’d look.';
+for(const item of DATA.monthly) el('month').add(new Option(item.month,item.month));
+el('month').value=DATA.peak;
+function update(){
+  const item=DATA.monthly.find(r=>r.month===el('month').value);
+  el('cards').replaceChildren();
+  for(const [label,value] of [['Gross sales',gbp(item.gross)],['Orders',number.format(item.orders)],['Cancellation value',gbp(item.cancelled)],['Average order',gbp(item.gross/item.orders)]]){
+    const card=document.createElement('div');
+    const amount=document.createElement('strong');
+    amount.textContent=value;
+    card.append(label,amount);
+    el('cards').append(card);
+  }
+  el('products').replaceChildren();
+  if(item.adjustment_cancelled){
+    const adj=row(el('products'),['Fees, postage and manual entries (not products)','',gbp(item.adjustment_cancelled),pct(item.adjustment_cancelled/item.cancelled)]);
+    adj.className='muted';
+  }
+  for(const p of DATA.products.filter(r=>r.month===item.month)){
+    const share=p.cancelled/item.cancelled;
+    const tr=row(el('products'),[p.sku+' '+p.label,gbp(p.sales),gbp(p.cancelled),pct(share)]);
+    const track=document.createElement('div'),bar=document.createElement('div');
+    track.className='track';bar.className='bar';bar.style.width=pct(share);
+    track.append(bar);tr.lastElementChild.append(track);
+  }
+}
+for(const r of DATA.trace) row(el('trace'),[r.invoice,r.sku,number.format(r.qty),gbp(r.price),gbp(r.amount)]);
+for(const r of DATA.audit) row(el('audit'),[r.rule,number.format(r.rows),money.format(r.signed_gbp)]);
+el('month').addEventListener('change',update);
+update();
+</script></html>
